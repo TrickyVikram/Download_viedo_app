@@ -1,43 +1,52 @@
-const { spawn } = require('child_process');
+const { exec } = require('child_process');
 const path = require('path');
-const fs = require('fs');
 
 exports.downloadVideo = (req, res) => {
     const videoUrl = req.body.url;
+    const quality = req.body.quality || 'best';
+
     if (!videoUrl) {
         return res.status(400).send('URL is required');
     }
 
-    const filePath = path.join(__dirname, '../downloads', 'video.mp4');
-    const tempFilePath = path.join(__dirname, '../downloads', 'temp.mp4');
+    // Map the quality options to yt-dlp format codes
+    const formatMapping = {
+        '360p': '18', // Small
+        '720p': '22', // HD
+        '1080p': '137+140', // Full HD (video + audio)
+        '1440p': '271+140' // Quad HD (video + audio)
+    };
 
-    const ytDlpProcess = spawn('yt-dlp', ['-o', tempFilePath, videoUrl]);
+    // Determine the format to use, defaulting to 'best' if not specified
+    const selectedFormat = formatMapping[quality] || 'best';
 
-    ytDlpProcess.stderr.on('data', (data) => {
-        console.log(`stderr: ${data}`);
-        // You can parse progress information from stderr if yt-dlp provides it
-    });
+    // Specify the output file path
+    const filePath = path.join(__dirname, '../../downloads', 'video.mp4');
 
-    ytDlpProcess.on('close', (code) => {
-        if (code === 0) {
-            fs.rename(tempFilePath, filePath, (err) => {
-                if (err) {
-                    console.error('Error renaming file:', err);
-                    return res.status(500).send('Error processing video');
-                }
+    // Construct the yt-dlp command with the selected format and URL
+    const cmd = `yt-dlp -f "${selectedFormat}" -o "${filePath}" ${videoUrl}`;
 
-                res.download(filePath, 'video.mp4', (err) => {
-                    if (err) {
-                        console.error('Error sending file:', err);
-                        return res.status(500).send('Error sending file');
-                    }
-
-                    console.log('Video successfully downloaded');
-                });
-            });
-        } else {
-            console.error('Error downloading video');
-            res.status(500).send('Error downloading video');
+    // Execute the command
+    exec(cmd, (error, stdout, stderr) => {
+        if (error) {
+            console.error(`Error: ${error.message}`);
+            return res.status(500).send('Error downloading video');
         }
+
+        if (stderr) {
+            console.error(`Stderr: ${stderr}`);
+        }
+
+        console.log('Video downloaded successfully');
+        
+        // Serve the downloaded file to the user
+        res.download(filePath, 'video.mp4', (err) => {
+            if (err) {
+                console.error('Error sending file:', err);
+                return res.status(500).send('Error sending file');
+            }
+
+            console.log('Video successfully sent to user');
+        });
     });
 };
