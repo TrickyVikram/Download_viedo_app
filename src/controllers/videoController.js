@@ -3,7 +3,7 @@ const path = require('path');
 
 exports.downloadVideo = (req, res) => {
     const videoUrl = req.body.url;
-    const quality = req.body.quality || 'best';
+    const quality = req.body.quality;
 
     if (!videoUrl) {
         return res.status(400).send('URL is required');
@@ -17,36 +17,48 @@ exports.downloadVideo = (req, res) => {
         '1440p': '271+140' // Quad HD (video + audio)
     };
 
-    // Determine the format to use, defaulting to 'best' if not specified
-    const selectedFormat = formatMapping[quality] || 'best';
+    // Get the selected format based on the user's choice
+    const selectedFormat = formatMapping[quality] || '';
 
-    // Specify the output file path
-    const filePath = path.join(__dirname, '../../downloads', 'video.mp4');
+    // Fetch video title using yt-dlp
+    const getTitleCmd = `yt-dlp --get-title ${videoUrl}`;
 
-    // Construct the yt-dlp command with the selected format and URL
-    const cmd = `yt-dlp -f "${selectedFormat}" -o "${filePath}" ${videoUrl}`;
-
-    // Execute the command
-    exec(cmd, (error, stdout, stderr) => {
+    exec(getTitleCmd, (error, stdout, stderr) => {
         if (error) {
-            console.error(`Error: ${error.message}`);
-            return res.status(500).send('Error downloading video');
+            console.error(`Error fetching video title: ${error.message}`);
+            return res.status(500).send('Error fetching video title');
         }
 
-        if (stderr) {
-            console.error(`Stderr: ${stderr}`);
-        }
+        const videoTitle = stdout.trim().replace(/[<>:"/\\|?*]+/g, ''); // Sanitize the filename
 
-        console.log('Video downloaded successfully');
-        
-        // Serve the downloaded file to the user
-        res.download(filePath, 'video.mp4', (err) => {
-            if (err) {
-                console.error('Error sending file:', err);
-                return res.status(500).send('Error sending file');
+        // Specify the output file path using the fetched title
+        const filePath = path.join(__dirname, '../../downloads', `${videoTitle}.mp4`);
+
+        // Construct the yt-dlp command for downloading the video
+        const downloadCmd = `yt-dlp ${selectedFormat ? `-f "${selectedFormat}"` : ''} -o "${filePath}" ${videoUrl}`;
+
+        // Execute the command to download the video
+        exec(downloadCmd, (error, stdout, stderr) => {
+            if (error) {
+                console.error(`Error downloading video: ${error.message}`);
+                return res.status(500).send('Error downloading video');
             }
 
-            console.log('Video successfully sent to user');
+            if (stderr) {
+                console.error(`Stderr: ${stderr}`);
+            }
+
+            console.log('Video downloaded successfully');
+            
+            // Serve the downloaded file to the user
+            res.download(filePath, `${videoTitle}.mp4`, (err) => {
+                if (err) {
+                    console.error('Error sending file:', err);
+                    return res.status(500).send('Error sending file');
+                }
+
+                console.log('Video successfully sent to user');
+            });
         });
     });
 };
